@@ -16,6 +16,13 @@ class MahasiswaController extends Controller
 {
     private const ALLOWED_PER_PAGE = [10, 20, 50, 100];
 
+    // Kolom yang boleh dipakai untuk sorting, dan kolom DB aslinya.
+    private const SORTABLE_COLUMNS = [
+        'name' => 'name',
+        'nim' => 'nim',
+        'status_password' => 'must_change_password',
+    ];
+
     public function index(Request $request)
     {
         $perPage = (int) $request->query('per_page', 20);
@@ -23,9 +30,38 @@ class MahasiswaController extends Controller
             $perPage = 20;
         }
 
-        $mahasiswas = User::where('role', 'mahasiswa')
-            ->with('pilihan.dosen')
-            ->orderBy('name')
+        $search = trim((string) $request->query('search', ''));
+        $statusPilihan = $request->query('status_pilihan', '');
+        $statusPassword = $request->query('status_password', '');
+
+        $sort = $request->query('sort', 'name');
+        if (!array_key_exists($sort, self::SORTABLE_COLUMNS)) {
+            $sort = 'name';
+        }
+        $direction = $request->query('direction', 'asc') === 'desc' ? 'desc' : 'asc';
+
+        $query = User::where('role', 'mahasiswa')->with('pilihans.dosen');
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('nim', 'like', "%{$search}%");
+            });
+        }
+
+        if ($statusPilihan === 'sudah') {
+            $query->has('pilihans', '>=', 2);
+        } elseif ($statusPilihan === 'belum') {
+            $query->has('pilihans', '<', 2);
+        }
+
+        if ($statusPassword === 'wajib') {
+            $query->where('must_change_password', true);
+        } elseif ($statusPassword === 'sudah') {
+            $query->where('must_change_password', false);
+        }
+
+        $mahasiswas = $query->orderBy(self::SORTABLE_COLUMNS[$sort], $direction)
             ->paginate($perPage)
             ->withQueryString();
 
@@ -33,6 +69,11 @@ class MahasiswaController extends Controller
             'mahasiswas' => $mahasiswas,
             'perPage' => $perPage,
             'perPageOptions' => self::ALLOWED_PER_PAGE,
+            'search' => $search,
+            'statusPilihan' => $statusPilihan,
+            'statusPassword' => $statusPassword,
+            'sort' => $sort,
+            'direction' => $direction,
         ]);
     }
 
@@ -54,6 +95,27 @@ class MahasiswaController extends Controller
         ]);
 
         return back()->with('success', 'Mahasiswa ditambahkan. Login pakai NIM, kata sandi awal = NIM.');
+    }
+
+    public function update(Request $request, User $mahasiswa)
+    {
+        if ($mahasiswa->role !== 'mahasiswa') {
+            abort(404);
+        }
+
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
+            'nim' => 'required|string|unique:users,nim,' . $mahasiswa->id,
+            'email' => 'nullable|email|unique:users,email,' . $mahasiswa->id,
+        ]);
+
+        $mahasiswa->update([
+            'name' => $data['name'],
+            'nim' => $data['nim'],
+            'email' => $data['email'] ?: $data['nim'] . '@mahasiswa.local',
+        ]);
+
+        return back()->with('success', 'Data mahasiswa berhasil diperbarui.');
     }
 
     public function importExcel(Request $request)
@@ -123,13 +185,10 @@ class MahasiswaController extends Controller
         return back()->with('success', $message)->with('import_errors', array_slice($errors, 0, 20));
     }
 
-    /**
-     * Export seluruh data mahasiswa (termasuk status pilihan dosen) ke file Excel.
-     */
     public function exportExcel()
     {
         $mahasiswas = User::where('role', 'mahasiswa')
-            ->with('pilihan.dosen')
+            ->with('pilihans.dosen')
             ->orderBy('name')
             ->get();
 
@@ -137,28 +196,32 @@ class MahasiswaController extends Controller
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Mahasiswa');
 
-        $headers = ['No', 'NIM', 'Nama Lengkap', 'Email', 'Status Password', 'Dosen Pembimbing'];
-        $columns = ['A', 'B', 'C', 'D', 'E', 'F'];
+        $headers = ['No', 'NIM', 'Nama Lengkap', 'Email', 'Status Password', 'Pembimbing 1', 'Pembimbing 2'];
+        $columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
         foreach ($headers as $i => $text) {
             $sheet->setCellValue($columns[$i] . '1', $text);
         }
-        $sheet->getStyle('A1:F1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:F1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('14213D');
-        $sheet->getStyle('A1:F1')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getStyle('A1:G1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:G1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('14213D');
+        $sheet->getStyle('A1:G1')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
         $sheet->getRowDimension(1)->setRowHeight(22);
 
         $row = 2;
         foreach ($mahasiswas as $i => $mhs) {
+            $p1 = $mhs->pilihans->firstWhere('jenis', 'pembimbing_1');
+            $p2 = $mhs->pilihans->firstWhere('jenis', 'pembimbing_2');
+
             $sheet->setCellValue('A' . $row, $i + 1);
             $sheet->setCellValue('B' . $row, $mhs->nim);
             $sheet->setCellValue('C' . $row, $mhs->name);
             $sheet->setCellValue('D' . $row, $mhs->email);
             $sheet->setCellValue('E' . $row, $mhs->must_change_password ? 'Wajib ganti password' : 'Sudah diganti');
-            $sheet->setCellValue('F' . $row, $mhs->pilihan?->dosen?->nama ?? 'Belum memilih');
+            $sheet->setCellValue('F' . $row, $p1?->dosen?->nama ?? 'Belum memilih');
+            $sheet->setCellValue('G' . $row, $p2?->dosen?->nama ?? 'Belum memilih');
             $row++;
         }
 
-        foreach (['A', 'B', 'C', 'D', 'E', 'F'] as $col) {
+        foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
@@ -170,27 +233,6 @@ class MahasiswaController extends Controller
         }, $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
-    }
-
-    public function update(Request $request, User $mahasiswa)
-    {
-        if ($mahasiswa->role !== 'mahasiswa') {
-            abort(404);
-        }
-
-        $data = $request->validate([
-            'name' => 'required|string|max:255',
-            'nim' => 'required|string|unique:users,nim,' . $mahasiswa->id,
-            'email' => 'nullable|email|unique:users,email,' . $mahasiswa->id,
-        ]);
-
-        $mahasiswa->update([
-            'name' => $data['name'],
-            'nim' => $data['nim'],
-            'email' => $data['email'] ?: $data['nim'] . '@mahasiswa.local',
-        ]);
-
-        return back()->with('success', 'Data mahasiswa berhasil diperbarui.');
     }
 
     public function resetPassword(User $mahasiswa)

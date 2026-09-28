@@ -9,13 +9,17 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        $pilihan = Pilihan::with('dosen')
+        $milikSaya = Pilihan::with('dosen')
             ->where('mahasiswa_id', auth()->id())
-            ->first();
+            ->get()
+            ->keyBy('jenis');
+
+        $pilihan1 = $milikSaya->get('pembimbing_1');
+        $pilihan2 = $milikSaya->get('pembimbing_2');
 
         $jadwal = JadwalPemilihan::aktif();
-        $bisaBatal = $pilihan && $jadwal && $jadwal->sudahDibuka();
+        $bisaBatal = $jadwal && $jadwal->sudahDibuka();
 
-        return view('dashboard', compact('pilihan', 'bisaBatal'));
+        return view('dashboard', compact('pilihan1', 'pilihan2', 'bisaBatal'));
     }
 }

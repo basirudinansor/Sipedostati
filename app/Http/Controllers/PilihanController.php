@@ -14,10 +14,18 @@ class PilihanController extends Controller
     public function index()
     {
         $jadwal = JadwalPemilihan::aktif();
-        $sudahPilih = Pilihan::where('mahasiswa_id', auth()->id())->exists();
+
+        $milikSaya = Pilihan::with('dosen')
+            ->where('mahasiswa_id', auth()->id())
+            ->get()
+            ->keyBy('jenis');
+
+        $pilihan1 = $milikSaya->get('pembimbing_1');
+        $pilihan2 = $milikSaya->get('pembimbing_2');
+
         $dosens = Dosen::orderBy('nama')->get();
 
-        return view('pilih-dosen', compact('jadwal', 'sudahPilih', 'dosens'));
+        return view('pilih-dosen', compact('jadwal', 'pilihan1', 'pilihan2', 'dosens'));
     }
 
     public function serverTime()
@@ -38,7 +46,10 @@ class PilihanController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate(['dosen_id' => 'required|exists:dosens,id']);
+        $request->validate([
+            'dosen_id' => 'required|exists:dosens,id',
+            'jenis' => 'required|in:pembimbing_1,pembimbing_2',
+        ]);
 
         $jadwal = JadwalPemilihan::aktif();
         if (!$jadwal || !$jadwal->sudahDibuka()) {
@@ -46,69 +57,94 @@ class PilihanController extends Controller
         }
 
         $mahasiswaId = auth()->id();
+        $jenis = $request->jenis;
+        $labelJenis = $jenis === 'pembimbing_1' ? 'Pembimbing 1' : 'Pembimbing 2';
+        $kolomTerpakai = $jenis === 'pembimbing_1' ? 'kuota_terpakai_p1' : 'kuota_terpakai_p2';
 
-        if (Pilihan::where('mahasiswa_id', $mahasiswaId)->exists()) {
-            return back()->withErrors('Anda sudah memilih dosen pembimbing.');
+        if (Pilihan::where('mahasiswa_id', $mahasiswaId)->where('jenis', $jenis)->exists()) {
+            return back()->withErrors("Anda sudah memilih {$labelJenis}.");
+        }
+
+        // Cek dosen yang sama tidak boleh dipilih untuk kedua slot sekaligus
+        $jenisLain = $jenis === 'pembimbing_1' ? 'pembimbing_2' : 'pembimbing_1';
+        $labelLain = $jenisLain === 'pembimbing_1' ? 'Pembimbing 1' : 'Pembimbing 2';
+        $pilihanLain = Pilihan::where('mahasiswa_id', $mahasiswaId)->where('jenis', $jenisLain)->first();
+
+        if ($pilihanLain && (int) $pilihanLain->dosen_id === (int) $request->dosen_id) {
+            return back()->withErrors("Dosen ini sudah Anda pilih sebagai {$labelLain}. Silakan pilih dosen yang berbeda untuk {$labelJenis}.");
         }
 
         try {
-            DB::transaction(function () use ($request, $mahasiswaId) {
+            DB::transaction(function () use ($request, $mahasiswaId, $jenis, $kolomTerpakai, $labelJenis) {
                 $dosen = Dosen::where('id', $request->dosen_id)
                     ->lockForUpdate()
                     ->first();
 
-                if (!$dosen || $dosen->kuota_terpakai >= $dosen->kuota) {
+                if (!$dosen || $dosen->$kolomTerpakai >= $dosen->kuota) {
                     throw new \RuntimeException(
-                        'Mohon maaf, kuota dosen ini baru saja penuh. Silakan pilih dosen lain.'
+                        "Mohon maaf, kuota dosen ini untuk peran {$labelJenis} baru saja penuh. Silakan pilih dosen lain."
                     );
                 }
 
                 Pilihan::create([
                     'mahasiswa_id' => $mahasiswaId,
                     'dosen_id' => $dosen->id,
+                    'jenis' => $jenis,
                 ]);
 
-                $dosen->increment('kuota_terpakai');
+                $dosen->increment($kolomTerpakai);
             }, 3);
         } catch (\Illuminate\Database\QueryException $e) {
             Log::warning('Pilihan gagal karena constraint: ' . $e->getMessage());
-
-            return back()->withErrors('Anda sudah memilih dosen pembimbing.');
+            return back()->withErrors("Anda sudah memilih {$labelJenis}.");
         } catch (\RuntimeException $e) {
             return back()->withErrors($e->getMessage());
         }
 
-        return redirect()->route('dashboard')->with('success', 'Berhasil memilih dosen pembimbing!');
+        // Setelah Pembimbing 1 selesai dipilih -> otomatis balik ke halaman ini
+        // supaya lanjut pilih Pembimbing 2. Setelah Pembimbing 2 selesai -> ke Dashboard.
+        if ($jenis === 'pembimbing_1') {
+            return redirect()->route('pilih-dosen')
+                ->with('success', 'Pembimbing 1 berhasil dipilih! Sekarang silakan pilih Pembimbing 2.');
+        }
+
+        return redirect()->route('dashboard')
+            ->with('success', 'Pembimbing 2 berhasil dipilih! Kedua dosen pembimbing Anda sudah lengkap.');
     }
 
     /**
-     * Batalkan pilihan dosen pembimbing mahasiswa yang sedang login.
-     * Hanya boleh selama jadwal pemilihan masih berstatus "dibuka" (belum ditutup admin).
+     * Batalkan pilihan untuk satu slot tertentu (pembimbing_1 atau pembimbing_2).
+     * Hanya boleh selama jadwal pemilihan masih berstatus dibuka.
      */
-    public function destroy()
+    public function destroy(Request $request)
     {
-        $jadwal = JadwalPemilihan::aktif();
+        $request->validate(['jenis' => 'required|in:pembimbing_1,pembimbing_2']);
 
+        $jadwal = JadwalPemilihan::aktif();
         if (!$jadwal || !$jadwal->sudahDibuka()) {
             return back()->withErrors('Pembatalan tidak bisa dilakukan karena periode pemilihan sudah/belum dibuka.');
         }
 
-        $pilihan = Pilihan::where('mahasiswa_id', auth()->id())->first();
+        $pilihan = Pilihan::where('mahasiswa_id', auth()->id())
+            ->where('jenis', $request->jenis)
+            ->first();
 
         if (!$pilihan) {
-            return back()->withErrors('Anda belum memiliki pilihan dosen pembimbing.');
+            return back()->withErrors('Anda belum memiliki pilihan untuk slot ini.');
         }
 
-        DB::transaction(function () use ($pilihan) {
+        $kolomTerpakai = $pilihan->jenis === 'pembimbing_1' ? 'kuota_terpakai_p1' : 'kuota_terpakai_p2';
+
+        DB::transaction(function () use ($pilihan, $kolomTerpakai) {
             $dosen = Dosen::where('id', $pilihan->dosen_id)->lockForUpdate()->first();
 
             $pilihan->delete();
 
-            if ($dosen && $dosen->kuota_terpakai > 0) {
-                $dosen->decrement('kuota_terpakai');
+            if ($dosen && $dosen->$kolomTerpakai > 0) {
+                $dosen->decrement($kolomTerpakai);
             }
         });
 
-        return redirect()->route('dashboard')->with('success', 'Pilihan dosen pembimbing berhasil dibatalkan. Anda bisa memilih ulang selama pemilihan masih dibuka.');
+        return redirect()->route('dashboard')->with('success', 'Pilihan berhasil dibatalkan. Anda bisa memilih ulang selama pemilihan masih dibuka.');
     }
 }

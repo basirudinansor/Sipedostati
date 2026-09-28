@@ -22,9 +22,9 @@ class DatabaseSeeder extends Seeder
 
         // ---------- Dosen contoh (ganti/tambah lewat menu Kelola Dosen) ----------
         Dosen::insert([
-            ['nama' => 'Dr. Budi Santoso', 'nip' => '198001012005011001', 'bidang_keahlian' => 'Kecerdasan Buatan', 'kuota' => 5, 'kuota_terpakai' => 0, 'created_at' => now(), 'updated_at' => now()],
-            ['nama' => 'Dr. Siti Aminah', 'nip' => '198203152006042002', 'bidang_keahlian' => 'Rekayasa Perangkat Lunak', 'kuota' => 5, 'kuota_terpakai' => 0, 'created_at' => now(), 'updated_at' => now()],
-            ['nama' => 'Ir. Ahmad Fauzi, M.Kom', 'nip' => '197911202004031003', 'bidang_keahlian' => 'Jaringan Komputer', 'kuota' => 3, 'kuota_terpakai' => 0, 'created_at' => now(), 'updated_at' => now()],
+            ['nama' => 'Dr. Budi Santoso', 'nip' => '198001012005011001', 'bidang_keahlian' => 'Kecerdasan Buatan', 'kuota' => 5, 'kuota_terpakai_p1' => 0, 'kuota_terpakai_p2' => 0, 'created_at' => now(), 'updated_at' => now()],
+            ['nama' => 'Dr. Siti Aminah', 'nip' => '198203152006042002', 'bidang_keahlian' => 'Rekayasa Perangkat Lunak', 'kuota' => 5, 'kuota_terpakai_p1' => 0, 'kuota_terpakai_p2' => 0, 'created_at' => now(), 'updated_at' => now()],
+            ['nama' => 'Ir. Ahmad Fauzi, M.Kom', 'nip' => '197911202004031003', 'bidang_keahlian' => 'Jaringan Komputer', 'kuota' => 3, 'kuota_terpakai_p1' => 0, 'kuota_terpakai_p2' => 0, 'created_at' => now(), 'updated_at' => now()],
         ]);
 
         // ---------- 34 mahasiswa ----------

@@ -46,7 +46,13 @@
             display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;
         }
         .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
-        .brand__seal { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--brass); object-fit: cover; flex-shrink: 0; background: #fff; }
+        .brand__seal {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 2px solid var(--brass);
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--font-display); font-weight: 600; font-size: 15px;
+            color: var(--brass-bright); flex-shrink: 0;
+        }
         .brand__text { display: flex; flex-direction: column; line-height: 1.15; }
         .brand__eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: .16em; color: var(--brass-bright); text-transform: uppercase; }
         .brand__title { font-family: var(--font-display); font-size: 19px; color: var(--paper); font-weight: 600; }
@@ -147,10 +153,10 @@
     <header class="site-header">
         <div class="site-header__inner">
             <a href="{{ auth()->user()->isAdmin() ? route('admin.dashboard') : route('dashboard') }}" class="brand">
-                <img src="{{ asset('images/logo-ti.png') }}" alt="Logo TI" class="brand__seal">
+                <span class="brand__seal">PD</span>
                 <span class="brand__text">
-                    <span class="brand__eyebrow">Pemilihan Dosen Pembimbing</span>
-                    <span class="brand__title">Teknologi Informasi</span>
+                    <span class="brand__eyebrow">Sistem Akademik</span>
+                    <span class="brand__title">Pemilihan Dosbing</span>
                 </span>
             </a>
             <nav class="site-nav">
@@ -162,8 +168,8 @@
                 @else
                     <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') ? 'active' : '' }}">Dashboard</a>
                     <a href="{{ route('pilih-dosen') }}" class="{{ request()->routeIs('pilih-dosen') ? 'active' : '' }}">Pilih Dosen Pembimbing</a>
+                    <a href="{{ route('password.change.form') }}">Ganti Password</a>
                 @endif
-                <a href="{{ route('password.change.form') }}">Ganti Password</a>
                 <form action="{{ route('logout') }}" method="POST">
                     @csrf
                     <button type="submit">Keluar</button>

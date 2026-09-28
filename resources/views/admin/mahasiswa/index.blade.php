@@ -46,6 +46,10 @@
     .import-errors { margin-top: 18px; background: #F7E9EA; border-left: 3px solid var(--crimson); border-radius: 4px; padding: 14px 18px; font-size: 13.5px; color: #7A2530; }
     .import-errors ul { margin: 8px 0 0; padding-left: 18px; }
     .row-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+    .sort-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+    .sort-link:hover { color: var(--ink); }
+    .sort-arrow { font-size: 10px; opacity: .5; }
+    .sort-arrow.is-active { opacity: 1; color: var(--brass); }
 
     /* Modal */
     .modal-overlay {
@@ -71,6 +75,20 @@
         border: 1.5px solid var(--ink-line); background: #fff; cursor: pointer;
     }
     .table-toolbar select:focus { outline: none; border-color: var(--brass); }
+
+    .filter-bar {
+        display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;
+        padding: 20px; border-bottom: 1px solid var(--ink-line); background: #fff;
+    }
+    .filter-field { display: flex; flex-direction: column; gap: 6px; min-width: 170px; }
+    .filter-field label { margin: 0; font-size: 12px; }
+    .filter-field input, .filter-field select {
+        font-family: var(--font-body); font-size: 14px; padding: 9px 12px; border-radius: 4px;
+        border: 1.5px solid var(--ink-line); background: var(--paper);
+    }
+    .filter-field input:focus, .filter-field select:focus { outline: none; border-color: var(--brass); box-shadow: 0 0 0 3px rgba(184,145,46,.18); }
+    .filter-actions { display: flex; gap: 8px; }
+    .filter-active-note { font-size: 12.5px; color: var(--text-muted); padding: 0 20px 16px; }
 
     .pagination-bar {
         display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
@@ -152,6 +170,36 @@
 </div>
 
 <div class="panel" style="overflow: hidden;">
+    <form method="GET" action="{{ route('admin.mahasiswa.index') }}" class="filter-bar">
+        <input type="hidden" name="per_page" value="{{ $perPage }}">
+        <div class="filter-field" style="min-width: 220px;">
+            <label for="filter_search">Cari nama / NIM</label>
+            <input type="text" id="filter_search" name="search" value="{{ $search }}" placeholder="Ketik nama atau NIM...">
+        </div>
+        <div class="filter-field">
+            <label for="filter_status_pilihan">Status Pilihan</label>
+            <select id="filter_status_pilihan" name="status_pilihan">
+                <option value="">Semua</option>
+                <option value="sudah" {{ $statusPilihan === 'sudah' ? 'selected' : '' }}>Sudah lengkap (P1 & P2)</option>
+                <option value="belum" {{ $statusPilihan === 'belum' ? 'selected' : '' }}>Belum lengkap</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <label for="filter_status_password">Status Password</label>
+            <select id="filter_status_password" name="status_password">
+                <option value="">Semua</option>
+                <option value="wajib" {{ $statusPassword === 'wajib' ? 'selected' : '' }}>Wajib ganti</option>
+                <option value="sudah" {{ $statusPassword === 'sudah' ? 'selected' : '' }}>Sudah diganti</option>
+            </select>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="btn btn--primary" style="padding: 9px 20px; font-size: 13.5px;">Terapkan Filter</button>
+            @if($search || $statusPilihan || $statusPassword)
+                <a href="{{ route('admin.mahasiswa.index') }}" class="btn btn--outline" style="padding: 9px 20px; font-size: 13.5px;">Reset</a>
+            @endif
+        </div>
+    </form>
+
     <div class="table-toolbar">
         <div class="table-toolbar__left">
             <span>Tampilkan</span>
@@ -169,10 +217,36 @@
 
     <table class="data-table">
         <thead>
-            <tr><th>Nama</th><th>NIM</th><th>Password</th><th>Status Pilihan</th><th></th></tr>
+            <tr>
+                <th>
+                    <a href="{{ route('admin.mahasiswa.index', array_merge(request()->except(['sort','direction','page']), ['sort' => 'name', 'direction' => $sort === 'name' && $direction === 'asc' ? 'desc' : 'asc'])) }}" class="sort-link">
+                        Nama
+                        <span class="sort-arrow {{ $sort === 'name' ? 'is-active' : '' }}">{{ $sort === 'name' && $direction === 'desc' ? '▼' : '▲' }}</span>
+                    </a>
+                </th>
+                <th>
+                    <a href="{{ route('admin.mahasiswa.index', array_merge(request()->except(['sort','direction','page']), ['sort' => 'nim', 'direction' => $sort === 'nim' && $direction === 'asc' ? 'desc' : 'asc'])) }}" class="sort-link">
+                        NIM
+                        <span class="sort-arrow {{ $sort === 'nim' ? 'is-active' : '' }}">{{ $sort === 'nim' && $direction === 'desc' ? '▼' : '▲' }}</span>
+                    </a>
+                </th>
+                <th>
+                    <a href="{{ route('admin.mahasiswa.index', array_merge(request()->except(['sort','direction','page']), ['sort' => 'status_password', 'direction' => $sort === 'status_password' && $direction === 'asc' ? 'desc' : 'asc'])) }}" class="sort-link">
+                        Password
+                        <span class="sort-arrow {{ $sort === 'status_password' ? 'is-active' : '' }}">{{ $sort === 'status_password' && $direction === 'desc' ? '▼' : '▲' }}</span>
+                    </a>
+                </th>
+                <th>Pembimbing 1</th>
+                <th>Pembimbing 2</th>
+                <th></th>
+            </tr>
         </thead>
         <tbody>
             @forelse($mahasiswas as $mhs)
+            @php
+                $p1 = $mhs->pilihans->firstWhere('jenis', 'pembimbing_1');
+                $p2 = $mhs->pilihans->firstWhere('jenis', 'pembimbing_2');
+            @endphp
             <tr>
                 <td style="font-weight: 600; color: var(--ink);">{{ $mhs->name }}</td>
                 <td style="font-family: var(--font-mono); color: var(--text-muted);">{{ $mhs->nim }}</td>
@@ -184,8 +258,15 @@
                     @endif
                 </td>
                 <td>
-                    @if($mhs->pilihan)
-                        <span class="status-tag status-tag--yes">{{ $mhs->pilihan->dosen->nama }}</span>
+                    @if($p1)
+                        <span class="status-tag status-tag--yes">{{ $p1->dosen->nama }}</span>
+                    @else
+                        <span class="status-tag status-tag--no">Belum memilih</span>
+                    @endif
+                </td>
+                <td>
+                    @if($p2)
+                        <span class="status-tag status-tag--yes">{{ $p2->dosen->nama }}</span>
                     @else
                         <span class="status-tag status-tag--no">Belum memilih</span>
                     @endif
@@ -213,7 +294,7 @@
                 </td>
             </tr>
             @empty
-            <tr><td colspan="5" style="text-align:center; color: var(--text-muted); padding: 32px;">Belum ada mahasiswa terdaftar.</td></tr>
+            <tr><td colspan="6" style="text-align:center; color: var(--text-muted); padding: 32px;">Belum ada mahasiswa terdaftar.</td></tr>
             @endforelse
         </tbody>
     </table>

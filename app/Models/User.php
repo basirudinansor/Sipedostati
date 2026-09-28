@@ -33,9 +33,9 @@ class User extends Authenticatable
         ];
     }
 
-    public function pilihan()
+    public function pilihans()
     {
-        return $this->hasOne(Pilihan::class, 'mahasiswa_id');
+        return $this->hasMany(Pilihan::class, 'mahasiswa_id');
     }
 
     public function isAdmin(): bool

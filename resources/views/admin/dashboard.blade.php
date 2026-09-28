@@ -5,7 +5,7 @@
 <style>
     .stat-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
         gap: 18px;
         margin-bottom: 32px;
     }
@@ -21,6 +21,7 @@
     .stat-card__sub { font-size: 13px; color: var(--text-muted); }
     .stat-card__value.crimson { color: var(--crimson); }
     .stat-card__value.forest { color: var(--forest); }
+    .stat-card__value.brass { color: var(--brass); }
 
     .chart-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; margin-bottom: 32px; align-items: stretch; }
     .chart-panel { padding: 28px; display: flex; flex-direction: column; }
@@ -44,7 +45,7 @@
 @section('content')
 <span class="eyebrow">Panel Admin</span>
 <h1 class="page-title">Ringkasan Pemilihan Dosen Pembimbing</h1>
-<p class="page-subtitle">Pantau progres kuota dosen dan status pemilihan mahasiswa secara real-time.</p>
+<p class="page-subtitle">Pantau progres kuota dosen dan status pemilihan mahasiswa (Pembimbing 1 & 2) secara real-time.</p>
 
 <div class="jadwal-strip">
     <div>
@@ -66,22 +67,32 @@
         <div class="stat-card__value">{{ $totalMahasiswa }}</div>
         <div class="stat-card__sub">Akun terdaftar di sistem</div>
     </div>
-    <div class="stat-card" style="animation-delay: .06s">
-        <div class="stat-card__label">Sudah Memilih</div>
-        <div class="stat-card__value forest">{{ $sudahPilih }}</div>
-        <div class="stat-card__sub">{{ $persenSudahPilih }}% dari total mahasiswa</div>
+
+    <div class="stat-card" style="animation-delay: .05s">
+        <div class="stat-card__label">Sudah Pilih Pembimbing 1</div>
+        <div class="stat-card__value brass">{{ $sudahP1 }}</div>
+        <div class="stat-card__sub">Mahasiswa yang sudah menentukan P1</div>
     </div>
-    <div class="stat-card" style="animation-delay: .1s">
-        <div class="stat-card__label">Belum Memilih</div>
-        <div class="stat-card__value crimson">{{ $belumPilih }}</div>
-        <div class="stat-card__sub">Mahasiswa menunggu jadwal / belum pilih</div>
+
+    <div class="stat-card" style="animation-delay: .08s">
+        <div class="stat-card__label">Sudah Pilih Pembimbing 2</div>
+        <div class="stat-card__value">{{ $sudahP2 }}</div>
+        <div class="stat-card__sub">Mahasiswa yang sudah menentukan P2</div>
     </div>
+
+    <div class="stat-card" style="animation-delay: .11s">
+        <div class="stat-card__label">Sudah Lengkap (P1 & P2)</div>
+        <div class="stat-card__value forest">{{ $sudahLengkap }}</div>
+        <div class="stat-card__sub">{{ $persenLengkap }}% dari total mahasiswa</div>
+    </div>
+
     <div class="stat-card" style="animation-delay: .14s">
-        <div class="stat-card__label">Total Dosen</div>
-        <div class="stat-card__value">{{ $totalDosen }}</div>
-        <div class="stat-card__sub">Kuota total {{ $totalKuota }} bimbingan</div>
+        <div class="stat-card__label">Belum Sama Sekali</div>
+        <div class="stat-card__value crimson">{{ $belumSamaSekali }}</div>
+        <div class="stat-card__sub">Belum memilih P1 maupun P2</div>
     </div>
-    <div class="stat-card" style="animation-delay: .18s">
+
+    <div class="stat-card" style="animation-delay: .17s">
         <div class="stat-card__label">Kuota Terisi</div>
         <div class="stat-card__value">{{ $persenTerisi }}%</div>
         <div class="stat-card__sub">{{ $totalTerpakai }} dari {{ $totalKuota }} slot bimbingan</div>
@@ -91,12 +102,12 @@
 <div class="chart-grid">
     <div class="panel chart-panel">
         <h2>Kuota Terisi per Dosen</h2>
-        <p class="chart-hint">Batang emas = sudah terisi, batang abu = sisa kuota.</p>
+        <p class="chart-hint">Emas = terisi sebagai Pembimbing 1, Navy = terisi sebagai Pembimbing 2. Data dihitung langsung dari pilihan mahasiswa.</p>
         <div class="chart-canvas-wrap"><canvas id="chartDosen"></canvas></div>
     </div>
     <div class="panel chart-panel">
-        <h2>Status Pemilihan</h2>
-        <p class="chart-hint">Perbandingan mahasiswa yang sudah dan belum memilih.</p>
+        <h2>Status Pemilihan Mahasiswa</h2>
+        <p class="chart-hint">Lengkap = sudah pilih P1 dan P2. Sebagian = baru salah satu.</p>
         <div class="chart-canvas-wrap"><canvas id="chartStatus"></canvas></div>
     </div>
 </div>
@@ -104,31 +115,30 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const inkColor = '#14213D';
     const brassColor = '#B8912E';
     const crimsonColor = '#A6303F';
     const forestColor = '#2E6B4F';
-    const mutedColor = '#D9D5C8';
 
     const dosenLabels = @json($dosens->pluck('nama'));
-    const dosenTerpakai = @json($dosens->pluck('kuota_terpakai'));
-    const dosenSisa = @json($dosens->map(fn($d) => max(0, $d->kuota - $d->kuota_terpakai)));
+    const dosenP1 = @json($dosens->pluck('pilihan_p1_count'));
+    const dosenP2 = @json($dosens->pluck('pilihan_p2_count'));
+    const dosenKuota = @json($dosens->pluck('kuota'));
 
     new Chart(document.getElementById('chartDosen'), {
         type: 'bar',
         data: {
             labels: dosenLabels,
             datasets: [
-                { label: 'Terisi', data: dosenTerpakai, backgroundColor: brassColor, borderRadius: 4, stack: 'kuota' },
-                { label: 'Sisa', data: dosenSisa, backgroundColor: mutedColor, borderRadius: 4, stack: 'kuota' },
+                { label: 'Sbg Pembimbing 1', data: dosenP1, backgroundColor: brassColor, borderRadius: 4 },
+                { label: 'Sbg Pembimbing 2', data: dosenP2, backgroundColor: '#14213D', borderRadius: 4 },
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                x: { stacked: true, ticks: { font: { family: 'IBM Plex Sans', size: 11 } } },
-                y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+                x: { ticks: { font: { family: 'IBM Plex Sans', size: 11 } } },
+                y: { beginAtZero: true, ticks: { precision: 0 }, suggestedMax: Math.max(...dosenKuota, 1) }
             },
             plugins: {
                 legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 12 } } }
@@ -139,10 +149,10 @@ document.addEventListener('DOMContentLoaded', function () {
     new Chart(document.getElementById('chartStatus'), {
         type: 'doughnut',
         data: {
-            labels: ['Sudah memilih', 'Belum memilih'],
+            labels: ['Lengkap (P1 & P2)', 'Sebagian (1 saja)', 'Belum sama sekali'],
             datasets: [{
-                data: [{{ $sudahPilih }}, {{ $belumPilih }}],
-                backgroundColor: [forestColor, crimsonColor],
+                data: [{{ $sudahLengkap }}, {{ $sebagian }}, {{ $belumSamaSekali }}],
+                backgroundColor: [forestColor, brassColor, crimsonColor],
                 borderWidth: 0,
             }]
         },
